@@ -1,0 +1,88 @@
+version: '3.7'
+services:
+
+  # pub_sub_emulator
+  pub_sub_emulator:
+    image: bigtruedata/gcloud-pubsub-emulator:latest
+    ports:
+    - "8085:8085"
+    expose:
+      - "8085"
+      - "8538"
+    tty: true
+    volumes:
+      - ./data/pubsub-data:/export
+    env_file:
+      - ./.env.local-heuleum
+    command: server /export
+    restart: on-failure
+    entrypoint: >
+      /bin/sh -c "
+        gcloud beta emulators pubsub start --project=event-tracker --host-port=0.0.0.0:8085
+      "
+    networks:
+      - heuleum-container
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # heuleum app
+  heuleum_app:
+    build:
+      context: ../../
+      dockerfile: Dockerfile.local.heuleum
+    tty: true
+    volumes:
+      - ../../src:/usr/local/heuleum/src/
+      - ../../tests:/usr/local/heuleum/tests/
+    env_file:
+      - ./.env.local-heuleum
+    links:
+      - pub_sub_emulator
+    depends_on:
+      - pub_sub_emulator
+    restart: on-failure
+    networks:
+      - heuleum-container
+
+  #  # Use when running locally instead of BQ
+  #  postgres-db:
+  #    container_name: "data_engine_postgres"
+  #    restart: "always"
+  #    image: postgres
+  #    env_file:
+  #      - ./config/postgres.env
+  #    links:
+  #      - pub_sub_emulator
+  #    volumes:
+  #      - ./postgres_volume:/var/lib/postgresql/data/
+  #      - ./services/postgres/:/docker-entrypoint-initdb.d/
+  #    ports:
+  #      - 5432:5432
+  #    networks:
+  #      - heuleum-container
+#
+  #  # To be able to analyze data without connecting to the cloud
+  #  metabase:
+  #    container_name: "data_engine_metabase"
+  #    restart: "always"
+  #    image: metabase/metabase
+  #    environment:
+  #      MB_DB_HOST: postgres-db
+  #    env_file:
+  #      - ./config/metabase_database.env
+  #    links:
+  #      - pub_sub_emulator
+  #    ports:
+  #      - 3000:3000
+  #    depends_on:
+  #      - postgres-db
+  #    networks:
+  #      - heuleum-container
+
+# main network
+networks:
+  heuleum-container:
+    driver: bridge
